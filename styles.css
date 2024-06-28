@@ -1,0 +1,213 @@
+body,
+html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+}
+
+#main-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0px;
+    bottom: 0;
+    overflow: auto;
+}
+
+#header {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    padding: 10px;
+    z-index: 1000;
+    width: auto;
+    max-width: 80%;
+    pointer-events: none;
+}
+
+.description-button {
+    margin-bottom: 10px;
+    padding: 5px 10px;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.description {
+    display: none;
+    padding: 10px;
+    transition: max-height 0.3s ease-out;
+    pointer-events: auto;
+}
+
+.description.show {
+    display: block;
+}
+.sidebar {
+    position: fixed;
+    right: -300px;
+    /* 숨김 상태 */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 300px;
+    height: 80%;
+    background-color: #f4f4f4;
+    box-shadow: -2px 0 5px rgba(0, 0, 0, 0.5);
+    transition: right 0.5s ease, transform 0.5s ease;
+    overflow-y: auto;
+    z-index: 900;
+}
+
+
+
+#toggleSidebar {
+    position: fixed;
+    right: 0px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1000;
+    padding: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: right 0.5s ease;
+}
+#toggleEnvironmentSidebar {
+    position: fixed;
+    right: 0px;
+    top: 53%;
+    transform: translateY(-50%);
+    z-index: 1000;
+    padding: 10px;
+    background-color: #09ff00;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: right 0.5s ease;
+}
+/* #toggleEnvironmentSidebar {
+    position: fixed;
+    right: 0px;
+    top: 55%;
+    z-index: 1001;
+    padding: 10px;
+    background-color: #28a745;
+    
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: right 0.5s ease;
+} */
+#menu{
+    position: fixed;
+    left:0px;
+    bottom:0px;
+    padding : 10px;
+    background-color: #007bff;
+}
+.hamburger {
+    display: block;
+    width: 25px;
+    height: 3px;
+    background-color: white;
+    position: relative;
+    transition: background 0.3s ease;
+}
+
+.hamburger::before,
+.hamburger::after {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 3px;
+    background-color: white;
+    left: 0;
+    transition: transform 0.3s ease;
+}
+
+.hamburger::before {
+    top: -8px;
+}
+
+.hamburger::after {
+    top: 8px;
+}
+
+.sidebar ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar ul li {
+    padding: 10px;
+    border-bottom: 1px solid #ccc;
+    display: flex;
+    flex-direction: column;
+    /* 수직 배치 */
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.sidebar ul li img {
+    width: 200px;
+    height: auto;
+    margin-bottom: 10px;
+    /* 이미지 아래 여백 */
+    align-self: center;
+}
+
+.sidebar ul li span {
+    display: inline-block;
+    vertical-align: middle;
+    line-height: normal;
+}
+
+#loadingOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.loader {
+    border: 16px solid #f3f3f3;
+    border-radius: 50%;
+    border-top: 16px solid #3498db;
+    width: 120px;
+    height: 120px;
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}

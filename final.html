@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>20195269_최승문 - Final</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <script type="x-shader/x-vertex" id="waterVertexShader">
+      uniform float time;
+      uniform sampler2D noiseTexture;
+      varying vec2 vUv;
+      varying vec3 vWorldPosition;
+  
+      void main() {
+          vUv = uv;
+          vec3 pos = position;
+  
+          float noiseValue = texture2D(noiseTexture, uv + vec2(time * 0.05, 0.0)).r;
+          float waveHeight = .02;
+          pos.z += noiseValue * waveHeight;
+
+          vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+          vWorldPosition = worldPosition.xyz;
+  
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+  </script>
+  <script type="x-shader/x-fragment" id="waterFragmentShader">
+    uniform sampler2D waterTexture;
+    uniform vec3 fogColor;
+    uniform float fogDensity;
+    
+    varying vec2 vUv;
+    varying vec3 vWorldPosition;
+
+    void main() {
+        // 바다 텍스처를 사용하여 표면 텍스처링
+        vec4 texColor = texture2D(waterTexture, vUv * 10.0); // 텍스처 스케일 조절
+        vec4 baseColor = vec4(0.0, 0.3, 0.5, 1.0);
+
+        // 텍스처와 기본 색상을 혼합
+        vec4 finalColor = mix(baseColor, texColor, 0.5);
+
+        // 안개 계산
+        float distance = length(vWorldPosition - cameraPosition);
+        float fogFactor = exp(-fogDensity  * distance * distance);
+        fogFactor = 1.0 - clamp(fogFactor, 0.0, 1.0);
+
+        // 안개 색상과 최종 색상을 혼합
+        gl_FragColor = mix(finalColor, vec4(fogColor, 1.0), fogFactor);
+    }
+</script>
+
+
+  <script type="x-shader/x-vertex" id="phongVS">
+      varying vec3 fNormal,fWorldPos;
+
+      void main(){
+          gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+
+          fNormal=normalize(normalMatrix*normal);
+          fWorldPos=(modelMatrix*vec4(position,1.0)).xyz;
+      }
+    </script>
+
+  <script type="x-shader/x-fragment" id="phongFS">
+      precision mediump float;
+
+      //uniform vec3 lightDir;
+      uniform vec3 lightPosition;
+      uniform vec4 lightAmbient,matAmbient;
+      uniform vec4 lightDiffuse,matDiffuse;
+      uniform vec4 lightSpecular,matSpecular;
+      uniform float matShininess;
+      varying vec3 fNormal,fWorldPos;
+      void main() {
+
+          vec3 N=normalize(fNormal);
+          vec3 L = normalize(lightPosition-fWorldPos);
+          vec3 V=normalize(cameraPosition-fWorldPos);
+          vec3 H = normalize(L + V);
+
+          float kd = max(dot(L, N), 0.0);
+          float ks = pow(max(dot(N, H), 0.0), matShininess);
+
+          vec4 ambient=lightAmbient*matAmbient;
+          vec4 diffuse = kd * lightDiffuse * matDiffuse;
+          vec4 specular = ks * lightSpecular * matSpecular;
+
+          gl_FragColor = ambient + diffuse + specular;
+          gl_FragColor.a = 1.0;
+
+      }
+    </script>
+  <script type="x-shader/x-vertex" id="phongTexVS">
+    varying vec3 fNormal,fWorldPos;
+    varying vec2 fTexCoord;
+
+      void main(){
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+
+        fNormal=normalize(normalMatrix*normal);
+        fWorldPos=(modelMatrix*vec4(position,1.0)).xyz;
+        fTexCoord=uv;
+      }
+              
+  </script>
+
+
+  <script type="x-shader/x-fragment" id="phongTexFS">
+      precision mediump float;
+
+      uniform vec3 lightPosition;
+      uniform vec3 targetPosition;
+      uniform vec4 lightAmbient,matAmbient;
+      uniform vec4 lightDiffuse,matDiffuse;
+      uniform vec4 lightSpecular,matSpecular;
+      uniform float matShininess;
+      uniform sampler2D texImage;
+
+      varying vec3 fNormal,fWorldPos;
+      varying vec2 fTexCoord;
+
+      void main() {
+          
+
+          vec3 N=normalize(fNormal);
+          vec3 L = normalize(lightPosition-targetPosition);
+          float kd = max(dot(L, N), 0.0);
+          
+          vec3 V=normalize(cameraPosition-fWorldPos);
+          vec3 H = normalize(L - V);
+
+          float distance = length(lightPosition-targetPosition);
+          float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+
+
+          float ks = pow(max(dot(N, H), 0.0), matShininess);
+
+          vec4 ambient=lightAmbient*matAmbient;
+          vec4 diffuse = kd * lightDiffuse * matDiffuse* attenuation;
+          vec4 specular = ks * lightSpecular * matSpecular* attenuation;
+
+          gl_FragColor = (ambient + diffuse + specular)*texture2D(texImage,fTexCoord);
+          gl_FragColor.a = 1.0;
+
+      }
+  </script>
+
+  <script type="x-shader/x-vertex" id="phongTexWithBumpVS">
+      attribute vec3 vt;
+      varying vec3 fNormal, fWorldPos, fTangent;
+      varying vec2 vTexCoord;
+      void main() {
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+          fNormal = normalize(normalMatrix * normal);
+          fWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          vTexCoord = uv;
+          fTangent = normalize(normalMatrix * vt);
+
+      }
+  </script>
+
+  <script type="x-shader/x-fragment" id="phongTexWithBumpFS">
+    precision mediump float;
+    uniform vec3 lightPosition;
+    uniform vec4 lightAmbient, matAmbient;
+    uniform vec4 lightDiffuse, matDiffuse;
+    uniform vec4 lightSpecular, matSpecular;
+    uniform float matShininess;
+    
+    varying vec3 fNormal,fWorldPose,fTangent;
+    varying vec2 vTexCoord;
+
+    uniform sampler2D texImage, bumpImage;
+
+    void main() {
+        vec3 N = normalize(fNormal);
+        vec3 T=normalize(fTangent);
+        vec3 B=normalize(cross(N,T));
+        mat3 TBN=mat3(T,B,N);
+        N= normalize(TBN*(texture2D(bumpImage, vTexCoord).rgb * 2.0 - 1.0));
+
+        vec3 L = TBN*normalize(lightPosition - fWorldPos);
+        float kd = max(dot(L, N), 0.0);
+
+        vec3 V = TBN*normalize(cameraPosition - fWorldPos);
+        vec3 H = normalize(L + V);
+        float ks = pow(max(dot(N,H), 0.0), matShininess);
+
+        vec4 ambient = lightAmbient * matAmbient;
+        vec4 diffuse = kd * lightDiffuse * matDiffuse;
+        vec4 specular = ks * lightSpecular * matSpecular;
+
+        vec4 color = texture2D(texImage, vTexCoord);
+        gl_FragColor = (ambient + diffuse + specular) * color;
+        gl_FragColor.a = 1.0;
+    }
+</script>
+
+
+  <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three/examples/jsm/"
+        }
+      }
+    </script>
+
+  <div id="main-content">
+    <div id="loadingOverlay">
+      <div class="loader"></div>
+    </div>
+    <img src="Images/CameraFrame.png" id="studioCameraView"
+      style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1500;">
+
+    <button id="toggleSidebar" class="btn btn-primary">
+      <i class="fas fa-bars"></i>
+    </button>
+    <div id="sidebar" class="sidebar">
+      <ul>
+        <li>Models</li>
+        <li><img src="Images/Cube.png" alt="Cube" id="addCube" />Cube</li>
+        <li><img src="Images/Sphere.png" alt="Sphere" id="addSphere" />Sphere</li>
+        <li><img src="Images/Pillar.png" alt="Pillar" id="addPillar" />PillarBig</li>
+        <li><img src="Images/PillarSmall.png" alt="PillarSmall" id="addPillarSmall" />Pillar Small</li>
+        <li><img src="Images/Statue.png" alt="Statue" id="addStatue" />Statue</li>
+        <li><img src="Images/StoneGate.jpg" alt="StoneGate" id="addStoneGate" />StoneGate</li>
+        <li><img src="Images/BrassBox.jpg" alt="BrassBox" id="addBrassBox" />BrassBox</li>
+        <li><img src="Images/Rock1.png" alt="Rock1" id="addRock1" />Rock1</li>
+        <li><img src="Images/Rock2.png" alt="Rock2" id="addRock2" />Rock2</li>
+        <li><img src="Images/water.jpg" alt=water id="addWater" />Water</li>
+      </ul>
+    </div>
+    <button id="toggleEnvironmentSidebar" class="btn btn-primary">
+      <i class="fas fa-bars"></i>
+    </button>
+    <div id="environmentSidebar" class="sidebar">
+      <ul>
+        <li>Env Map</li>
+        <li><img src="Images/studioSmall.png" alt="studioSmall.exr" id="envStudioSmall" />Studio Small</li>
+        <li><img src="Images/metro.png" alt="metro.exr" id="envMetro" />Metro</li>
+        <li><img src="Images/bay.png" alt="bay.exr" id="envBay" />Bay</li>
+        <li><img src="Images/sunset.png" alt="sunset.exr" id="envSunset" />Sunset</li>
+        <li><img src="Images/photoStudio.png" alt="photoStudio.exr" id="envPhotoStudio" />PhotoStudio</li>
+        <li><img src="Images/ruin.png" alt="ruin.exr" id="envRuin" />Ruin</li>
+      </ul>
+    </div>
+    <div id="header">
+      <button id="toggleDescription" class="description-button">설명 보기</button>
+      <div id="description" class="description">
+        1: 이전 객체 선택하기 / 3: 다음 객체 선택하기<br />
+        W: 이동 모드 / E: 회전 모드 / R: 크기 조절 모드<br />
+        Shift: 스냅 활성화 / Ctrl : 패닝 <br />
+        Delete: 선택된 객체 삭제<br />
+        V : 촬영 모드 / H : 사진 촬영 / F: 오브젝트 포커스 & 촬영 프레임 숨기기<br />
+      </div>
+    </div>
+    <!-- <div id="menu">
+      <button id="undoButton" class="btn btn-secondary">Undo</button>
+      <button id="redoButton" class="btn btn-secondary">Redo</button>
+    </div> -->
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { TransformControls } from "three/addons/controls/TransformControls.js";
+      import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+      import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+      import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js';
+      import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+      import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
+
+      const loadingOverlay = document.getElementById('loadingOverlay');
+
+      let scene, camera, studioCamera, renderer;
+      let controls, transformControls;
+      let cameraModel, object, lightGizmo;
+      let skybox;
+      let focusSound, shutterSound;
+      let sidebar, toggleButton, envSidebar, toggleEnvButton, studioCameraView, header;
+      let material, phongTex, phongTexWithBump, waterMaterial;
+      let controlGui, cameraSettingGui;
+
+
+      const draggableObjects = [];
+      const objectsModel = [];
+      const objectsMaterial = [];
+      const manager = new THREE.LoadingManager();
+      manager.onStart = function (url, itemsLoaded, itemsTotal) {
+        console.log('Started loading file: ' + url);
+        if (loadingOverlay) {
+          loadingOverlay.style.display = 'flex';
+        } else {
+          console.error('Loading overlay element not found!');
+        }
+      };
+      manager.onLoad = function () {
+        console.log('All files loaded.')
+        loadingOverlay.style.display = 'none';
+
+      };
+      manager.onProgress = function (url, itemsLoaded, itemsTotal) {
+        console.log(`Loaded ${itemsLoaded} of ${itemsTotal} files: ${url}`);
+      };
+      manager.onError = function (url) {
+        console.error('There was an error loading ' + url);
+        loadingOverlay.style.display = 'none';
+      };
+      const textureLoader = new THREE.TextureLoader();
+      const objLoader = new OBJLoader(manager);
+      const exrLoader = new EXRLoader();
+      const audioLoader = new THREE.AudioLoader(manager);
+      const listener = new THREE.AudioListener();
+      const params = {
+        Mode: "translate",
+        Space: "local",
+        lightPosition: { x: 0, y: 5, z: 10 }
+      };
+      const cameraSetting = {
+        fov: 75,
+        aspect: window.innerWidth / window.innerHeight,
+        near: 0.1,
+        far: 1000,
+         width: window.innerWidth,
+        height: window.innerHeight
+      }
+      const targetPosition = new THREE.Vector3(0, 0, 0);
+
+      let selectedIndex = 0;
+      let isDragging = false;
+      let isMoving = false;
+      let isOnStudioCamera = false;
+      let lightPosition = new THREE.Vector3(params.lightPosition.x, params.lightPosition.y, params.lightPosition.z);
+      let cameraPosition = new THREE.Vector3(0, 0, 0);
+      let textureDiffuse, textureNormal;
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2(1, 1);
+      const clock = new THREE.Clock();
+
+
+
+      init();
+      animate();
+
+      function init() {
+
+        setupScene();
+        setupCamera();
+        setUpSound();
+        setupRenderer();
+        setupControls();
+        setUI();
+        loadTextures();
+        initializeMaterials();
+        registerEvents();
+        setCamera();
+        document.getElementById('loadingOverlay').style.display = 'none';
+      }
+
+
+      function setupScene() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xafafaf);
+        exrLoader.load(
+          'EXR/sunset.exr',
+          function (texture) {
+            if (texture) {
+              texture.mapping = THREE.EquirectangularReflectionMapping;
+
+              // skybox 생성 및 추가
+              skybox = new GroundedSkybox(texture, 15, 100);
+              skybox.position.y = 15 - 0.1;
+              scene.add(skybox);
+
+              // 환경맵 및 배경 설정
+              scene.environment = texture;
+              scene.background = texture;
+
+              console.log('EXR file loaded successfully.');
+            } else {
+              console.error('Texture is undefined.');
+            }
+          },
+          undefined,
+          function (error) {
+            console.error('An error occurred loading the EXR file:', error);
+          }
+        );
+        scene.fog = new THREE.FogExp2(0xDDDDDD, 0.001);
+      }
+
+      function setupCamera() {
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+        camera.position.y = 2;
+        studioCamera = new THREE.PerspectiveCamera(cameraSetting.fov, cameraSetting.aspect, cameraSetting.near, cameraSetting.far);
+
+        camera.add(listener);
+
+      }
+      function setUpSound() {
+        focusSound = new THREE.Audio(listener);
+        shutterSound = new THREE.Audio(listener);
+        audioLoader.load('sound/focus.mp3', function (buffer) {
+          focusSound = new THREE.Audio(listener).setBuffer(buffer);
+          focusSound.setVolume(0.5);
+          focusSound.setLoop(false);
+        });
+        audioLoader.load('sound/shutter.mp3', function (buffer) {
+          shutterSound = new THREE.Audio(listener).setBuffer(buffer);
+          shutterSound.setVolume(0.5);
+          shutterSound.setLoop(false);
+        });
+      }
+
+      function setupRenderer() {
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById("main-content").appendChild(renderer.domElement);
+        renderer.ouputEncoding = THREE.sRGBEncoding;
+      }
+
+      function setupControls() {
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enablePan = true;
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.enableZoom = true;
+        controls.screenSpacePanning = false;
+        controls.maxPolarAngle = Math.PI / 2;
+
+        transformControls = new TransformControls(camera, renderer.domElement);
+        scene.add(transformControls);
+
+        // transformControls.addEventListener("change", function () {
+        //   if (transformControls.object) {
+        //     // TransformControls로 이동한 객체의 위치 업데이트
+        //     transformControls.object.traverse(child=>{
+        //       if(child.isMesh){
+        //         child.material.uniforms.targetPosition.value.copy(transformControls.object.position);
+        //       }
+        //     });
+        //   }
+        // });
+
+      }
+      function updateLightPosition() {
+        lightPosition.x = params.lightPosition.x;
+        lightPosition.y = params.lightPosition.y;
+        lightPosition.z = params.lightPosition.z;
+        lightGizmo.position.copy(lightPosition);
+
+        // Shader uniforms update code if needed
+        objectsMaterial.forEach(material => {
+          material.uniforms.lightPosition.value.copy(lightPosition);
+        });
+      }
+      function setUI() {
+        controlGui = new dat.GUI({ name: "My GUI", autoPlace: false });
+        document
+          .getElementById("main-content")
+          .appendChild(controlGui.domElement);
+
+        controlGui.domElement.style.position = "absolute";
+        controlGui.domElement.style.top = "10px";
+        controlGui.domElement.style.left = "10px";
+
+        controlGui
+          .add(params, "Mode", ["translate", "rotate", "scale"])
+          .onChange(function (mode) {
+            transformControls.setMode(mode);
+          });
+        controlGui
+          .add(params, "Space", ["local", "world"])
+          .onChange(function (space) {
+            transformControls.setSpace(space);
+          });
+
+        cameraSettingGui = new dat.GUI({ name: "CameraSettingUI", autoPlace: false });
+        document
+          .getElementById("main-content")
+          .appendChild(cameraSettingGui.domElement);
+
+        cameraSettingGui.domElement.style.position = "absolute";
+        cameraSettingGui.domElement.style.bottom = "10px";
+        cameraSettingGui.domElement.style.left = "10px";
+        cameraSettingGui.domElement.style.display = "none";
+        cameraSettingGui.domElement.style.zIndex = 2000;
+        // cameraSettingGui.domElement.style.transform = "translateY(-100%)";
+        const cameraFolder = cameraSettingGui.addFolder('Camera Setting');
+        cameraFolder.add(cameraSetting, 'fov', 0, 180).onChange(() => {
+          studioCamera.fov = cameraSetting.fov;
+          studioCamera.updateProjectionMatrix();
+        });
+        cameraFolder.add(cameraSetting, 'width', 0.1, window.innerWidth).onChange(updateCameraAspect);
+        cameraFolder.add(cameraSetting, 'height', 0.1, window.innerHeight).onChange(updateCameraAspect);
+        cameraFolder.add(cameraSetting, 'near', 0.1, 10).onChange(() => {
+          studioCamera.near = cameraSetting.near;
+          studioCamera.updateProjectionMatrix();
+        });
+        cameraFolder.add(cameraSetting, 'far', 0, 1000).onChange(() => {
+          studioCamera.far = cameraSetting.far;
+          studioCamera.updateProjectionMatrix();
+        });
+
+        const gizmoGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+        const gizmoMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        lightGizmo = new THREE.Mesh(gizmoGeometry, gizmoMaterial);
+        scene.add(lightGizmo);
+        lightGizmo.position.copy(lightPosition);
+
+        const lightFolder = controlGui.addFolder('Light Position');
+        lightFolder.add(params.lightPosition, 'x', -10, 10).onChange(updateLightPosition);
+        lightFolder.add(params.lightPosition, 'y', -10, 10).onChange(updateLightPosition);
+        lightFolder.add(params.lightPosition, 'z', -10, 10).onChange(updateLightPosition);
+        lightFolder.open();
+        sidebar = document.getElementById('sidebar');
+        toggleButton = document.getElementById("toggleSidebar");
+        envSidebar = document.getElementById('environmentSidebar');
+        toggleEnvButton = document.getElementById("toggleEnvironmentSidebar");
+        studioCameraView = document.getElementById('studioCameraView');
+
+        header = document.getElementById('header');
+      }
+      function updateCameraAspect() {
+          const widthRatio = cameraSetting.width;
+          const heightRatio = cameraSetting.height;
+
+          cameraSetting.aspect = (cameraSetting.width / cameraSetting.height) || (window.innerWidth / window.innerHeight);
+          studioCamera.aspect = widthRatio / heightRatio;
+          
+          studioCamera.updateProjectionMatrix();
+        }
+      function loadTextures(callback) {
+        manager.onLoad = () => {
+          console.log('All textures loaded.');
+        };
+        textureDiffuse = textureLoader.load('textures/darkfinewood_diffuse.jpg');
+        textureNormal = textureLoader.load('textures/darkfinewood_normal.jpg');
+        textureDiffuse.wrapS = textureDiffuse.wrapT = THREE.RepeatWrapping;
+        textureNormal.wrapS = textureNormal.wrapT = THREE.RepeatWrapping;
+        textureDiffuse.repeat.set(0.2, 0.2);
+        textureNormal.repeat.set(0.2, 0.2);
+      }
+
+      function initializeMaterials() {
+        const geometry = new THREE.PlaneGeometry(100, 100);
+        geometry.computeTangents();
+        geometry.rotateX(-Math.PI / 2);
+        geometry.translate(0, -0.5, 0);
+        material = new THREE.ShaderMaterial({
+          uniforms: {
+            // lightDir: { value: lightPosition },
+            lightPosition: { value: lightPosition },
+            targetPosition: { value: targetPosition },
+            lightAmbient: { value: [0, 0, 0, 1.0] },
+            lightDiffuse: { value: [1.0, 1.0, 1.0, 1.0] },
+            lightSpecular: { value: [1.0, 1.0, 1.0, 1.0] },
+            matAmbient: { value: [1.0, 1.0, 1.0, 1.0] },
+            matDiffuse: { value: [1.0, 1.0, 1.0, 1.0] },
+            matSpecular: { value: [1.0, 1.0, 1.0, 1.0] },
+            matShininess: { value: 100.0 },
+            cameraPosition: { value: camera.position }
+          },
+          vertexShader: document.getElementById("phongVS").textContent,
+          fragmentShader: document.getElementById("phongFS").textContent,
+        });
+        phongTex = new THREE.ShaderMaterial({
+          uniforms: {
+            texImage: { value: textureDiffuse },
+            lightPosition: { value: lightPosition },
+            targetPosition: { value: targetPosition },
+            lightAmbient: { value: [.5,.5,.5, 1.0] },
+            lightDiffuse: { value: [1.0, 1.0, 1.0, 1.0] },
+            lightSpecular: { value: [1.0, 1.0, 1.0, 1.0] },
+            matAmbient: { value: [1.0, 1.0, 1.0, 1.0] },
+            matDiffuse: { value: [1.0, 1.0, 1.0, 1.0] },
+            matSpecular: { value: [1.0, 1.0, 1.0, 1.0] },
+            matShininess: { value: 100.0 },
+            cameraPosition: { value: camera.position }
+          },
+          vertexShader: document.getElementById('phongTexVS').textContent,
+          fragmentShader: document.getElementById('phongTexFS').textContent,
+        });
+
+        phongTexWithBump = new THREE.ShaderMaterial({
+          uniforms: {
+            lightPosition: { value: lightPosition },
+            targetPosition: { value: targetPosition },
+            lightAmbient: { value: [1, 1, 1, 1.0] },
+            lightDiffuse: { value: [1.0, 1.0, 1.0, 1.0] },
+            lightSpecular: { value: [1.0, 1.0, 1.0, 1.0] },
+            matAmbient: { value: [1.0, 1.0, 1.0, 1.0] },
+            matDiffuse: { value: [1.0, 1.0, 1.0, 1.0] },
+            matSpecular: { value: [1.0, 1.0, 1.0, 1.0] },
+            matShininess: { value: 100.0 },
+            cameraPosition: { value: camera.position },
+            texImage: { value: textureDiffuse },
+            bumpImage: { value: textureNormal },
+          },
+          vertexShader: document.getElementById("phongTexWithBumpVS").textContent,
+          fragmentShader: document.getElementById("phongTexWithBumpFS").textContent,
+        });
+
+        const plane = new THREE.Mesh(geometry, material);
+        scene.add(plane);
+
+
+      }
+      function setCamera() {
+        const tex = textureLoader.load('Models/Camera/10124_SLR_Camera_V1_Diffuse.jpg');
+
+        objLoader.load(
+          'Models/Camera/10124_SLR_Camera_SG_V1_Iteration2.obj',
+          function (obj) {
+            console.log("Model loaded successfully");
+            loadModel(phongTex, tex, obj, (group) => {
+              cameraModel = group;
+              draggableObjects.push(cameraModel);
+              cameraModel.position.y = 1;
+              cameraModel.position.z = 3;
+              cameraModel.scale.setScalar(0.01);
+              // group.rotation.y = Math.PI;
+              // group.rotation.x = Math.PI / 2;
+              console.log("Model has been loaded and positioned/scaling done.");
+              render();
+
+            });
+          },
+          onProgress,
+          onError
+        );
+      }
+      function loadModel(mat, tex, object, callback) {
+        const group = new THREE.Group();
+        object.traverse(function (child) {
+
+          if (child.isMesh) {
+
+            const geometry = child.geometry.clone();
+
+            const material = mat.clone();
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.material.uniforms.texImage.value = tex;
+
+            group.add(mesh);
+            objectsModel.push(mesh);
+            objectsMaterial.push(material);
+
+          }
+
+        });
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+          loadingOverlay.style.display = 'none';
+        } else {
+          console.error('Loading overlay element not found!');
+        }
+        scene.add(group);
+
+        callback(group);
+      }
+      // function loadModelWithBump(mat, tex, tex2, object, callback) {
+      //   const group = new THREE.Group();
+      //   object.traverse(function (child) {
+
+      //     if (child.isMesh) {
+
+      //       const geometry = child.geometry.clone();
+      //       geometry.setAttribute('vt', geometry.attributes.tangent.clone());
+      //       const material = mat.clone();
+      //       const mesh = new THREE.Mesh(geometry, material);
+      //       mesh.material.uniforms.texImage.value = tex;
+
+      //       if (!mesh.attributes.tangent) {
+      //         console.logError('Tangent attribute not found. Computing...');
+      //         const tempGeometry = BufferGeometryUtils.mergeVertices(mesh);
+      //         BufferGeometryUtils.computeTangents(tempGeometry); // Tangent 벡터 계산
+      //         mesh.attributes.tangent = tempGeometry.attributes.tangent;
+      //       }
+      //       mesh.material.uniforms.bumpImage.value = tex2;
+      //     }
+      //     group.add(mesh);
+      //     objectsModel.push(mesh);
+      //     objectsMaterial.push(material);
+      //   });
+      //   const loadingOverlay = document.getElementById('loadingOverlay');
+      //   if (loadingOverlay) {
+      //     loadingOverlay.style.display = 'none';
+      //   } else {
+      //     console.error('Loading overlay element not found!');
+      //   }
+      //   scene.add(group);
+
+      //   callback(group);
+      // }
+
+
+
+      function onProgress(xhr) {
+
+        if (xhr.lengthComputable) {
+
+          const percentComplete = xhr.loaded / xhr.total * 100;
+          console.log('model ' + percentComplete.toFixed(2) + '% downloaded');
+        }
+      }
+
+      function onError() { }
+
+
+
+      // 카메라 포커싱 애니메이션 함수
+      function focusOnObject(object) {
+        // 카메라와 컨트롤의 타겟을 객체의 위치로 설정
+        controls.target.copy(object.position);
+
+        // 객체의 크기에 따라 카메라 거리 조정
+        const box = new THREE.Box3().setFromObject(object);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let distance = maxDim / 2 / Math.tan(fov / 2);
+        distance *= 3; // 거리를 조금 더 늘려서 객체 전체를 볼 수 있게 설정
+
+        // 카메라의 현재 방향 유지
+        const direction = new THREE.Vector3()
+          .subVectors(camera.position, controls.target)
+          .normalize();
+
+        // 새 카메라 위치 계산
+        const newPosition = new THREE.Vector3().addVectors(
+          center,
+          direction.multiplyScalar(distance)
+        );
+        const currentCameraPos = new THREE.Vector3().copy(camera.position);
+        const currentTargetPos = new THREE.Vector3().copy(controls.target);
+
+        // 목표 카메라와 타겟 위치
+        const targetCameraPos = newPosition;
+        const targetTargetPos = center;
+        // 카메라 위치를 애니메이션 없이 즉시 업데이트
+        // Tween.js 애니메이션 설정
+        new TWEEN.Tween(currentCameraPos)
+          .to(targetCameraPos, 1000) // 2000ms 동안 애니메이션 실행
+          .easing(TWEEN.Easing.Cubic.Out) // Cubic Out easing 함수 사용
+          .onUpdate(() => {
+            camera.position.set(
+              currentCameraPos.x,
+              currentCameraPos.y,
+              currentCameraPos.z
+            );
+            camera.lookAt(center);
+          })
+          .start(); // 애니메이션 시작
+
+        new TWEEN.Tween(currentTargetPos)
+          .to(targetTargetPos, 1000)
+          .easing(TWEEN.Easing.Cubic.Out)
+          .onUpdate(() => {
+            controls.target.set(
+              currentTargetPos.x,
+              currentTargetPos.y,
+              currentTargetPos.z
+            );
+          })
+          .start();
+        controls.update();
+      }
+      function registerEvents() {
+        document.addEventListener("DOMContentLoaded", function () {
+
+          document.getElementById('toggleEnvironmentSidebar').addEventListener('click', function () {
+            const sidebar = document.getElementById('environmentSidebar');
+            const toggleButton = document.getElementById("toggleEnvironmentSidebar");
+            toggleSidebar(sidebar, toggleButton);
+          });
+
+          document.getElementById('toggleSidebar').addEventListener('click', function () {
+            const sidebar = document.getElementById('sidebar');
+            const toggleButton = document.getElementById("toggleSidebar");
+
+            toggleSidebar(sidebar, toggleButton);
+          });
+
+          function toggleSidebar(sidebar, toggleButton) {
+            if (sidebar.style.right === '0px') {
+              sidebar.style.right = '-300px'; // 사이드바 숨김
+              toggleButton.style.right = '0px'; // 버튼 숨김
+            } else {
+              sidebar.style.right = '0px'; // 사이드바 표시
+              toggleButton.style.right = '300px'; // 버튼 표시
+            }
+          }
+
+
+          // 설명 텍스트 이벤트
+          document.getElementById("toggleDescription").addEventListener("click", function () {
+            const btn = document.getElementById("toggleDescription");
+            if (btn.innerText === "설명 보기") {
+              btn.innerText = "설명 숨기기";
+            } else {
+              btn.innerText = "설명 보기";
+            }
+            const description = document.getElementById("description");
+            description.classList.toggle("show");
+          });
+        });
+        //이미지 클릭시 큐브 추가 이벤트
+        document
+          .getElementById("addCube")
+          .addEventListener("click", function () {
+            const geometry = new THREE.BoxGeometry();
+            const cube = new THREE.Mesh(geometry, material);
+            cube.useQuaternion = true;
+            scene.add(cube);
+            draggableObjects.push(cube);
+            objectsModel.push(cube);
+            objectsMaterial.push(material);
+            transformControls.attach(cube);
+            selectedIndex = draggableObjects.indexOf(cube);
+          });
+        //이미지 클릭시 스피어 추가 이벤트
+        document
+          .getElementById("addSphere")
+          .addEventListener("click", function () {
+            const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.useQuaternion = true;
+            scene.add(sphere);
+            draggableObjects.push(sphere);
+            objectsModel.push(sphere);
+            objectsMaterial.push(material);
+            transformControls.attach(sphere);
+            selectedIndex = draggableObjects.indexOf(sphere);
+          });
+        //이미지 클릭시 기둥 추가 이벤트
+        document
+          .getElementById("addPillar")
+          .addEventListener("click", function () {
+            const tex = textureLoader.load('Models/Pillar/germany010.jpg');
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            objLoader.load(
+              'Models/Pillar/objPillar.obj',
+              function (obj) {
+                console.log("Model loaded successfully");
+                loadModel(phongTex, tex, obj, (group) => {
+                  group.position.y = 0;
+                  group.scale.setScalar(5);
+                  draggableObjects.push(group);
+                  transformControls.attach(group);
+                  selectedIndex = draggableObjects.indexOf(group);
+
+                  // group.rotation.y = Math.PI;
+                  // group.rotation.x = Math.PI / 2;
+                  console.log("Model has been loaded and positioned/scaling done.");
+                  render();
+
+                });
+              },
+              onProgress,
+              onError
+            );
+          });
+        //이미지 클릭시 작은 기둥 추가 이벤트
+        document
+          .getElementById("addPillarSmall")
+          .addEventListener("click", function () {
+            const tex = textureLoader.load('Models/PillarSmall/PillarSnowAlbedo.png');
+            const tex2 = textureLoader.load('Models/PillarSmall/PillarSnowNormal.png');
+            objLoader.load(
+              'Models/PillarSmall/PILLAR_LOWPOLY.obj',
+              function (obj) {
+                console.log("Model loaded successfully");
+                loadModel(phongTex, tex, obj, (group) => {
+                  group.position.y = 0;
+                  group.scale.setScalar(1);
+                  // group.rotation.y = Math.PI;
+                  // group.rotation.x = Math.PI / 2;
+                  draggableObjects.push(group);
+                  transformControls.attach(group);
+                  selectedIndex = draggableObjects.indexOf(group);
+
+                  console.log("Model has been loaded and positioned/scaling done.");
+                  render();
+
+                });
+              },
+              onProgress,
+              onError
+            );
+          });
+        document
+          .getElementById("addStatue")
+          .addEventListener("click", function () {
+            const tex = textureLoader.load('Models/Statue/StatueDiffuse.png');
+            objLoader.load(
+              'Models/Statue/Statue.obj',
+              function (obj) {
+                console.log("Model loaded successfully");
+                loadModel(phongTex, tex, obj, (group) => {
+                  group.position.y = 0;
+                  group.scale.setScalar(.5);
+                  // group.rotation.y = Math.PI;
+                  // group.rotation.x = Math.PI / 2;
+                  draggableObjects.push(group);
+                  transformControls.attach(group);
+                  selectedIndex = draggableObjects.indexOf(group);
+
+                  console.log("Model has been loaded and positioned/scaling done.");
+                  render();
+
+                });
+              },
+              onProgress,
+              onError
+            );
+          });
+        document.getElementById("addStoneGate").addEventListener("click", function () {
+          const tex = textureLoader.load('Models/StoneGate/Stonegate_None_BaseColor.png');
+
+          objLoader.load(
+            'Models/StoneGate/StoneGate.obj',
+            function (obj) {
+              console.log("Model loaded successfully");
+              loadModel(phongTex, tex, obj, (group) => {
+                group.position.y = 0;
+                group.scale.setScalar(0.5);
+                // group.rotation.y = Math.PI;
+                // group.rotation.x = Math.PI / 2;
+                draggableObjects.push(group);
+                transformControls.attach(group);
+                selectedIndex = draggableObjects.indexOf(group);
+
+                console.log("Model has been loaded and positioned/scaling done.");
+                render();
+
+              });
+            },
+            onProgress,
+            onError
+          );
+        });
+        document.getElementById("addRock1").addEventListener("click", function () {
+          const tex = textureLoader.load('Models/Rock1/Rock1_Diffuse.png');
+
+          objLoader.load(
+            'Models/Rock1/rock1.obj',
+            function (obj) {
+              console.log("Model loaded successfully");
+              loadModel(phongTex, tex, obj, (group) => {
+                group.position.y = 0;
+                group.scale.setScalar(1);
+                // group.rotation.y = Math.PI;
+                // group.rotation.x = Math.PI / 2;
+                draggableObjects.push(group);
+                transformControls.attach(group);
+                selectedIndex = draggableObjects.indexOf(group);
+
+                console.log("Model has been loaded and positioned/scaling done.");
+                render();
+
+              });
+            },
+            onProgress,
+            onError
+          );
+        });
+        document.getElementById("addRock2").addEventListener("click", function () {
+          const tex = textureLoader.load('Models/Rock2/Rock2_Diffuse.jpg');
+          //const tex2 = textureLoader.load('Models/Rock2/Rock2_Normal.jpg');
+          objLoader.load(
+            'Models/Rock2/rock2.obj',
+            function (obj) {
+              console.log("Model loaded successfully");
+              loadModel(phongTex, tex,  obj, (group) => {
+                group.position.y = 0;
+                group.scale.setScalar(0.05);
+                // group.rotation.y = Math.PI;
+                // group.rotation.x = Math.PI / 2;
+                draggableObjects.push(group);
+                transformControls.attach(group);
+                selectedIndex = draggableObjects.indexOf(group);
+
+                console.log("Model has been loaded and positioned/scaling done.");
+                render();
+
+              });
+            },
+            onProgress,
+            onError
+          );
+        });
+
+        document.getElementById("addBrassBox").addEventListener("click", function () {
+          const tex = textureLoader.load('Models/BrassBox/Old_brass_box_basecolor.jpeg');
+
+          objLoader.load(
+            'Models/BrassBox/OldBrassBox.obj',
+            function (obj) {
+              console.log("Model loaded successfully");
+              loadModel(phongTex, tex, obj, (group) => {
+                group.position.y = 0;
+                group.scale.setScalar(0.1);
+                // group.rotation.y = Math.PI;
+                // group.rotation.x = Math.PI / 2;
+                draggableObjects.push(group);
+                transformControls.attach(group);
+                selectedIndex = draggableObjects.indexOf(group);
+
+                console.log("Model has been loaded and positioned/scaling done.");
+                render();
+
+              });
+            },
+            onProgress,
+            onError
+          );
+        });
+        document.getElementById("addWater").addEventListener("click", function () {
+          createOcean();
+        })
+        //이미지 클릭시 스튜디오 환경 추가 이벤트
+        document
+          .getElementById("envStudioSmall")
+          .addEventListener("click", function () {
+            changeEnvironment('EXR/studioSmall.exr');
+          });
+        //이미지 클릭시 메트로 환경 추가 이벤트
+        document
+          .getElementById("envMetro")
+          .addEventListener("click", function () {
+            changeEnvironment('EXR/metro.exr');
+          });
+        //이미지 클릭시 베이 환경 추가 이벤트
+        document
+          .getElementById("envBay")
+          .addEventListener("click", function () {
+            changeEnvironment('EXR/bay.exr');
+          });
+        //이미지 클릭시 선셋 환경 추가 이벤트
+        document
+          .getElementById("envSunset")
+          .addEventListener("click", function () {
+            changeEnvironment('EXR/sunset.exr');
+          });
+        //이미지 클릭시 포토 스튜디오 환경 추가 이벤트
+        document
+          .getElementById("envPhotoStudio")
+          .addEventListener("click", function () {
+            changeEnvironment('EXR/photoStudio.exr');
+          });
+        //이미지 클릭시 폐허 환경 추가 이벤트
+        document.getElementById("envRuin").addEventListener("click", function () {
+          changeEnvironment('EXR/ruin.exr');
+        });
+
+        window.addEventListener("keydown", onKeyDown);
+        window.addEventListener("keyup", onKeyUp);
+        window.addEventListener("resize", onWindowResize);
+        window.addEventListener("click", onMouseClick);
+
+        transformControls.addEventListener(
+          "dragging-changed",
+          function (event) {
+            if (event.value) {
+              controls.enabled = false;
+              isDragging = true;
+            } else {
+              setTimeout(function () {
+                controls.enabled = true;
+                isDragging = false;
+              }, 500); // 500ms 딜레이
+            }
+
+          }
+        );
+        transformControls.addEventListener("change", function () {
+          if(transformControls.object){
+            transformControls.object.traverse(child=>{
+              if(child.isMesh&& (child.material.uniforms && child.material.uniforms.targetPosition)){
+                child.material.uniforms.targetPosition.value.copy(transformControls.object.position);
+              }
+            });
+          }
+        });
+        controls.addEventListener('change', function () {
+          material.uniforms.cameraPosition.value.copy(camera.position);
+          phongTex.uniforms.cameraPosition.value.copy(camera.position);
+          phongTexWithBump.uniforms.cameraPosition.value.copy(camera.position);
+        });
+
+
+
+
+      }
+      function changeEnvironment(newEnvFile) {
+        exrLoader.load(newEnvFile, function (newTexture) {
+          newTexture.mapping = THREE.EquirectangularReflectionMapping;
+          skybox.material.map = newTexture; // 스카이박스의 텍스쳐를 갈아끼움
+          skybox.material.needsUpdate = true; // 재질 업데이트 필요 플래그 설정
+
+          scene.environment = newTexture; // 씬의 환경을 업데이트
+          scene.background = newTexture; // 씬의 배경을 업데이트
+        });
+      }
+      function createOcean() {
+        const width = 256;
+        const height = 256;
+        const noiseData = generatePerlinNoise(width, height);
+        const noiseTexture = createTextureFromData(noiseData, width, height);
+        noiseTexture.wrapS = noiseTexture.wrapT = THREE.RepeatWrapping;
+
+        // TextureLoader를 사용하여 waterTexture를 로드합니다.
+        textureLoader.load('Images/water.jpg', function (waterTexture) {
+          waterTexture.wrapS = waterTexture.wrapT = THREE.RepeatWrapping;
+
+          // Geometry와 Material을 생성합니다.
+          const geometry = new THREE.PlaneGeometry(100, 100, 100, 100);
+          waterMaterial = new THREE.ShaderMaterial({
+
+            uniforms: {
+              time: { value: 0.0 },
+              noiseTexture: { value: noiseTexture },
+              waterTexture: { value: waterTexture },
+              fogColor: { value: new THREE.Vector3(scene.fog.color.r, scene.fog.color.g, scene.fog.color.b) },
+              fogDensity: { value: scene.fog.density }
+            },
+            vertexShader: document.getElementById('waterVertexShader').textContent,
+            fragmentShader: document.getElementById('waterFragmentShader').textContent,
+            side: THREE.DoubleSide
+          });
+
+          // Water Mesh를 생성하고 씬에 추가합니다.
+          const water = new THREE.Mesh(geometry, waterMaterial);
+          water.rotation.x = -Math.PI / 2;
+          water.position.y = 0.5;
+          scene.add(water);
+          draggableObjects.push(water);
+        });
+      }
+      function onKeyUp(event) {
+        switch (event.keyCode) {
+          case 16: // 'Shift' 키
+            transformControls.setTranslationSnap(null);
+            transformControls.setRotationSnap(null);
+            transformControls.setScaleSnap(null);
+            break;
+        }
+      }
+      function onKeyDown(event) {
+        console.log("onKeyDown" + event.keyCode);
+        switch (event.keyCode) {
+          case 49: // 숫자 '1' 키
+            if (draggableObjects.length == 0) break;
+            selectedIndex =
+              (selectedIndex - 1 + draggableObjects.length) %
+              draggableObjects.length;
+            transformControls.attach(draggableObjects[selectedIndex]);
+            break;
+          case 51: // 숫자 '3' 키
+            if (draggableObjects.length == 0) break;
+            selectedIndex = (selectedIndex + 1) % draggableObjects.length;
+            transformControls.attach(draggableObjects[selectedIndex]);
+            break;
+          case 81: // 'Q' 키
+            transformControls.setSpace(
+              transformControls.space === "local" ? "world" : "local"
+            );
+            params.Space = transformControls.space;
+            break;
+          case 87: // 'W' 키
+            transformControls.setMode("translate");
+            params.Mode = "translate";
+            break;
+          case 69: // 'E' 키
+            transformControls.setMode("rotate");
+            params.Mode = "rotate";
+            break;
+            v;
+          case 82: // 'R' 키
+            transformControls.setMode("scale");
+            params.Mode = "scale";
+            break;
+          case 86: // 'V' 키
+            switchCamera(); // 카메라 전환 함수 호출
+            focusSound.play();
+            break;
+          case 16: // 'Shift' 키
+            transformControls.setTranslationSnap(1);
+            transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+            transformControls.setScaleSnap(0.25);
+            break;
+          case 70: // 'F' 키
+            if (isOnStudioCamera) {
+              var display = document.getElementById('studioCameraView').style.display;
+              if (display === 'block') {
+                document.getElementById('studioCameraView').style.display = 'none';
+              }
+              else {
+                document.getElementById('studioCameraView').style.display = 'block';
+              }
+            }
+            else {
+              if (transformControls.object)
+                focusOnObject(transformControls.object);
+            }
+            break;
+          case 72: // 'H' 키
+            if (isOnStudioCamera) {
+
+              captureStudioCameraView();
+            }
+            break;
+          case 46 || 8: // 'Delete' 키
+            if (transformControls.object) {
+              scene.remove(transformControls.object);
+              draggableObjects.splice(selectedIndex, 1);
+              transformControls.detach();
+            }
+            break;
+          case 17 && 68: // 'Ctrl'+'D' 키
+            duplicateSelectedObject();
+        }
+      }
+      function captureStudioCameraView() {
+        shutterSound.play();
+        renderer.render(scene, studioCamera);
+        renderer.domElement.toBlob(function (blob) {
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = 'studio_camera_view.png';
+          link.click();
+        });
+      }
+      function duplicateSelectedObject() {
+        if (transformControls.object) {
+          const selectedObject = transformControls.object;
+
+          // 객체의 깊은 복사 수행
+          const clone = selectedObject.clone();
+
+          // 위치와 스케일을 원본 객체와 동일하게 설정
+          clone.position.set(
+            selectedObject.position.x + 0.5,
+            selectedObject.position.y,
+            selectedObject.position.z + 0.5
+          );
+
+          // 스케일 복제: 원본 객체의 스케일을 직접 복제 객체에 적용
+          console.log(selectedObject.scale)
+          clone.scale.copy(selectedObject.scale);
+          console.log(clone.scale);
+
+          // 복제된 객체를 씬에 추가
+          scene.add(clone);
+          draggableObjects.push(clone);  // 복제된 객체도 드래그 가능하도록 리스트에 추가
+          clone.updateMatrixWorld(true);
+          console.log("Object duplicated successfully");
+
+          // 복제된 객체를 선택
+          transformControls.attach(clone);
+        }
+      }
+      function generatePerlinNoise(width, height) {
+        const size = width * height;
+        const data = new Float32Array(size);
+        const perlin = new ImprovedNoise();
+        const z = Math.random() * 100;
+
+        let quality = 1;
+        for (let j = 0; j < 4; j++) {
+          for (let i = 0; i < size; i++) {
+            const x = i % width, y = ~~(i / width);
+            data[i] += perlin.noise(x / quality, y / quality, z) * quality;
+          }
+          quality *= 5;
+        }
+
+        return data;
+      }
+      function createTextureFromData(data, width, height) {
+        const texture = new THREE.DataTexture(data, width, height, THREE.RedFormat, THREE.FloatType);
+        texture.needsUpdate = true;
+        return texture;
+      }
+
+
+      function switchCamera() {
+        // 카메라 모델의 위치로 studioCamera를 이동
+        if (cameraModel) {
+          console.log("Switching to studio camera");
+          studioCamera.position.copy(cameraModel.position);
+          studioCamera.rotation.copy(cameraModel.rotation);
+          studioCamera.updateProjectionMatrix();
+        }
+
+
+        // 현재 사용 중인 카메라를 studioCamera로 전환
+        isOnStudioCamera = !isOnStudioCamera;
+        cameraModel.visible = !isOnStudioCamera;
+        transformControls.enabled = !isOnStudioCamera;
+        transformControls.detach();
+        uiToggle();
+
+
+        console.log("Switched to studio camera");
+      }
+      function onMouseClick(event) {
+        if (isOnStudioCamera) return;
+
+        console.log("onMouseClick");
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+
+
+        const intersects = raycaster.intersectObjects(draggableObjects, true);
+
+        if (intersects.length > 0) {
+          let selectedObject = intersects[0].object;
+
+          while (selectedObject.parent && selectedObject.parent !== scene) {
+            selectedObject = selectedObject.parent;
+          }
+          if (isDragging || isMoving) return;
+          transformControls.attach(selectedObject);
+          selectedIndex = draggableObjects.indexOf(selectedObject);
+        }
+      }
+
+      function onWindowResize() {
+        const aspectRatio = window.innerWidth / window.innerHeight;
+        camera.aspect = aspectRatio;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      function uiToggle() {
+        if (isOnStudioCamera) {
+          studioCameraView.style.display = 'flex';
+          cameraSettingGui.domElement.style.display = 'block';
+          controlGui.domElement.style.display = 'none';
+          sidebar.style.display = 'none';
+          envSidebar.style.display = 'none';
+          toggleButton.style.display = 'none';
+          toggleEnvButton.style.display = 'none';
+          header.style.display = 'none';
+        }
+        else {
+          studioCameraView.style.display = 'none';
+          cameraSettingGui.domElement.style.display = 'none';
+          controlGui.domElement.style.display = 'block';
+          sidebar.style.display = 'flex';
+          envSidebar.style.display = 'flex';
+          toggleButton.style.display = 'flex';
+          toggleEnvButton.style.display = 'flex';
+          header.style.display = 'flex';
+        }
+      }
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        TWEEN.update();
+        scene.updateMatrixWorld(true);
+        if (waterMaterial != null) {
+          waterMaterial.uniforms.time.value = clock.getElapsedTime();
+        }
+
+        // console.log(cameraModel.position);
+        render();
+      }
+      function render() {
+        if (isOnStudioCamera) {
+          renderer.render(scene, studioCamera);
+        }
+        else {
+          renderer.render(scene, camera);
+        }
+      }
+
+    </script>
+  </div>
+
+</body>
+
+</html>
